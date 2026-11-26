@@ -1,9 +1,16 @@
+import logging
+
 import requests
 
-import config
+from app import config
+
+log = logging.getLogger(__name__)
 
 
 def send(text: str) -> None:
+    """
+    Отправляет уведомление в telegram-бот
+    """
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage",
@@ -11,6 +18,6 @@ def send(text: str) -> None:
             timeout=15,
         )
         if not r.ok:
-            print("Telegram %s: %s", r.status_code, r.text)
+            log.error("Telegram %s: %s", r.status_code, r.text)
     except requests.RequestException:
-        print("Ошибка отправки в Telegram")
+        log.exception("Ошибка отправки в Telegram")

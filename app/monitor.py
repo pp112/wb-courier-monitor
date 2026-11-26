@@ -1,44 +1,42 @@
-import json
+import logging
 
-import config
-import telegram_notifier
+from app import config, notifier
+
+log = logging.getLogger(__name__)
 
 
-def process(current: dict):
-    """Сравнивает текущее состояние с прошлым снимком и шлёт уведомления."""
-    previous = _load_snapshot()
-
-    if previous is None:
-        _save_snapshot(current)
-        telegram_notifier.send(
-            f"Мониторинг запущен. ПВЗ с заказами сейчас: {len(current)}"
-        )
-        return
-# убрать лишние пвз до цикла чтобы не считать их заказы
-    offices = []
-    targets = config.load_targets()
-    for office, qty in current.items():
-        old_qty = previous.get(office, 0)
-        diff = qty - old_qty
-        if diff > 0:
-            offices.append(office)
+def process(
+    tasks_count: dict[str, int], 
+    previous: dict[str, int] | None,
+) -> dict[str, int]:
+    """
+    Сравнивает текущее состояние с прошлым снимком и шлёт уведомления.
+    """
+    current = _filter_targets(tasks_count, config.load_targets())
     
-    telegram_notifier.send(
-        "🆕 Новые заказы:"
-        f"{'\n'.join(offices)}"
-    )
+    if previous is None:
+        notifier.send(f"Мониторинг запущен. ПВЗ с заказами сейчас: {len(current)}")
+        return current
 
-    _save_snapshot(current)
+    lines = []
+    for address, qty in current.items():
+        old_qty = previous.get(address, 0)
+        if qty > old_qty:
+            lines.append(f"📍 {address}: +{qty - old_qty} (всего {qty})")
+
+    if lines:
+        notifier.send("🆕 Новые задания:\n" + "\n".join(lines))
+        log.info("Уведомление отправлено, ПВЗ: %s", len(lines))
+
+    return current
 
 
-def _load_snapshot() -> dict | None:
-    if not config.SNAPSHOT_FILE.exists():
-        return None
-    return json.loads(config.SNAPSHOT_FILE.read_text(encoding="utf-8"))
 
-
-def _save_snapshot(offices: dict) -> None:
-    config.SNAPSHOT_FILE.write_text(
-        json.dumps(offices, indent=4, ensure_ascii=False),
-        encoding="utf-8"
-    )
+def _filter_targets(task_counts: dict[str, int], targets: list[str]) -> dict[str, int]:
+    if not targets:
+        return task_counts
+    return {
+        addr: qty
+        for addr, qty in task_counts.items()
+        if any(t.lower() in addr.lower() for t in targets)
+    }
